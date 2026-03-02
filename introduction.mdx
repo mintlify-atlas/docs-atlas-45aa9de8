@@ -3,15 +3,9 @@ title: Introduction
 description: Centralized exception handling for .NET Web APIs with standardized ProblemDetails responses
 ---
 
-<img
-  src="/images/problemize-hero.png"
-  alt="Problemize - Centralized Exception Handling"
-  className="rounded-lg"
-/>
-
 # Welcome to Problemize
 
-Problemize is a robust and extensible framework for centralized exception handling in .NET Web APIs. It automatically converts unhandled exceptions into standardized [RFC 7807 ProblemDetails](https://tools.ietf.org/html/rfc7807) responses, making your API error handling clean, consistent, and maintainable.
+Problemize is a robust and extensible framework for centralized exception handling in .NET Web APIs. It automatically converts unhandled exceptions into standardized [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457.html) responses, making your API error handling clean, consistent, and maintainable.
 
 ## Why Problemize?
 
@@ -20,7 +14,7 @@ Problemize is a robust and extensible framework for centralized exception handli
     Two-line setup with extension methods. No controllers to modify, no try-catch blocks to write.
   </Card>
   <Card title="Standardized responses" icon="file-contract">
-    Automatic ProblemDetails formatting following RFC 7807 specification for consistent error responses.
+    Automatic ProblemDetails formatting following RFC 9457 specification for consistent error responses.
   </Card>
   <Card title="Smart status mapping" icon="route">
     Built-in mapping for common .NET exceptions to appropriate HTTP status codes.
