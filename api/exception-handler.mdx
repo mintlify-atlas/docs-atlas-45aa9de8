@@ -1,0 +1,113 @@
+---
+title: ExceptionHandler
+description: Converts exceptions into standardized problem details responses
+---
+
+Exception handler that converts exceptions into standardized problem details responses following RFC 7807.
+
+## Namespace
+
+```csharp
+FloppyShelf.Problemize.Services
+```
+
+## Class declaration
+
+```csharp
+public sealed class ExceptionHandler : IExceptionHandler
+```
+
+## Constructor
+
+Creates a new instance of the `ExceptionHandler` class.
+
+```csharp
+public ExceptionHandler(
+    IProblemDetailsService problemDetailsService,
+    IStatusCodeMapper statusCodeMapper)
+```
+
+### Parameters
+
+<ParamField path="problemDetailService" type="IProblemDetailsService" required>
+  The service used to write problem details responses.
+</ParamField>
+
+<ParamField path="statusCodeMapper" type="IStatusCodeMapper" required>
+  The component responsible for mapping exceptions to HTTP status codes.
+</ParamField>
+
+## Methods
+
+### TryHandleAsync
+
+Attempts to handle the exception and generate a problem details response.
+
+```csharp
+public async ValueTask<bool> TryHandleAsync(
+    HttpContext httpContext,
+    Exception exception,
+    CancellationToken cancellationToken)
+```
+
+#### Parameters
+
+<ParamField path="httpContext" type="HttpContext" required>
+  The current HTTP context.
+</ParamField>
+
+<ParamField path="exception" type="Exception" required>
+  The exception to handle.
+</ParamField>
+
+<ParamField path="cancellationToken" type="CancellationToken" required>
+  Cancellation token for async operations.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="result" type="ValueTask<bool>">
+  Returns `true` if the exception was handled and a response was written; otherwise, `false`.
+</ResponseField>
+
+#### Behavior
+
+This method:
+1. Sets the HTTP response status code based on the exception using the status code mapper
+2. Creates a `ValidationProblemDetails` for `ValidationException` instances
+3. Creates a standard `ProblemDetails` for all other exceptions
+4. Writes the problem details response using the problem details service
+
+#### Problem details structure
+
+For validation exceptions:
+- **Title**: "An error occured while validating your request"
+- **Detail**: The exception message
+- **Type**: The exception type name
+
+For all other exceptions:
+- **Title**: "An error occured while processing your request"
+- **Detail**: The exception message
+- **Type**: The exception type name
+
+#### Example
+
+```csharp
+// This class is registered automatically by UseExceptionHandling()
+// and handles exceptions globally in your application.
+
+// When an exception occurs:
+throw new ValidationException("Email is required");
+
+// The response will be:
+// Status: 400 Bad Request
+// {
+//   "type": "ValidationException",
+//   "title": "An error occured while validating your request",
+//   "detail": "Email is required",
+//   "status": 400,
+//   "instance": "POST /api/users",
+//   "requestId": "0HN7...",
+//   "activityId": "00-..."
+// }
+```

@@ -1,0 +1,98 @@
+---
+title: IStatusCodeMapper
+description: Interface to map exceptions to HTTP status codes
+---
+
+Interface to map exceptions to HTTP status codes. Implement this interface to create custom exception mapping logic.
+
+## Namespace
+
+```csharp
+FloppyShelf.Problemize.Interfaces
+```
+
+## Interface declaration
+
+```csharp
+public interface IStatusCodeMapper
+```
+
+## Methods
+
+### GetStatusCode
+
+Maps an exception to an appropriate HTTP status code.
+
+```csharp
+int GetStatusCode(Exception exception)
+```
+
+#### Parameters
+
+<ParamField path="exception" type="Exception" required>
+  The exception to evaluate.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="statusCode" type="int">
+  The corresponding HTTP status code.
+</ResponseField>
+
+## Implementations
+
+Problemize provides a default implementation:
+
+- [StatusCodeMapper](/api/status-code-mapper) - Maps common .NET exceptions to appropriate HTTP status codes
+
+## Example implementation
+
+```csharp
+using FloppyShelf.Problemize.Interfaces;
+
+public class CustomStatusCodeMapper : IStatusCodeMapper
+{
+    public int GetStatusCode(Exception exception)
+    {
+        return exception switch
+        {
+            // Custom exceptions
+            ProductNotFoundException => StatusCodes.Status404NotFound,
+            InsufficientStockException => StatusCodes.Status409Conflict,
+            PaymentFailedException => StatusCodes.Status402PaymentRequired,
+            
+            // Business validation errors
+            BusinessRuleException => StatusCodes.Status422UnprocessableEntity,
+            
+            // Authentication/Authorization
+            InvalidTokenException => StatusCodes.Status401Unauthorized,
+            InsufficientPermissionsException => StatusCodes.Status403Forbidden,
+            
+            // Fallback to default
+            _ => StatusCodes.Status500InternalServerError
+        };
+    }
+}
+```
+
+## Usage
+
+Register your custom mapper when configuring Problemize:
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// Register with custom mapper
+builder.Services.UseExceptionHandling(new CustomStatusCodeMapper());
+
+var app = builder.Build();
+app.UseExceptionHandling();
+```
+
+## Design considerations
+
+- Return status codes from the `Microsoft.AspNetCore.Http.StatusCodes` class for consistency
+- Consider using specific 4xx codes for client errors and 5xx codes for server errors
+- Provide a sensible default case (typically 500 Internal Server Error)
+- Order exception types from most specific to least specific in switch expressions
+- Document your custom mappings for API consumers

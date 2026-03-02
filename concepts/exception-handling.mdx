@@ -1,0 +1,123 @@
+---
+title: Exception handling
+description: Learn how Problemize implements centralized exception handling using ASP.NET Core's IExceptionHandler interface
+---
+
+## Overview
+
+Problemize implements centralized exception handling through the `ExceptionHandler` class, which integrates seamlessly with ASP.NET Core's global exception handling pipeline. This approach ensures that all unhandled exceptions in your Web API are converted into standardized Problem Details responses.
+
+## How it works
+
+The `ExceptionHandler` class implements ASP.NET Core's `IExceptionHandler` interface, making it part of the framework's built-in exception handling middleware.
+
+### Core architecture
+
+The handler depends on two key components:
+
+```csharp Services/ExceptionHandler.cs
+public sealed class ExceptionHandler : IExceptionHandler
+{
+    private readonly IProblemDetailsService _problemDetailsService;
+    private readonly IStatusCodeMapper _statusCodeMapper;
+
+    public ExceptionHandler(
+        IProblemDetailsService problemDetailsService, 
+        IStatusCodeMapper statusCodeMapper)
+    {
+        _problemDetailsService = problemDetailsService;
+        _statusCodeMapper = statusCodeMapper;
+    }
+}
+```
+
+<Info>
+  `IProblemDetailsService` is ASP.NET Core's built-in service for writing Problem Details responses, while `IStatusCodeMapper` is Problemize's interface for mapping exceptions to HTTP status codes.
+</Info>
+
+### Exception processing flow
+
+When an unhandled exception occurs, the `TryHandleAsync` method executes the following steps:
+
+#### 1. Map exception to status code
+
+```csharp Services/ExceptionHandler.cs
+httpContext.Response.StatusCode = _statusCodeMapper.GetStatusCode(exception);
+```
+
+The status code mapper determines the appropriate HTTP status code based on the exception type.
+
+#### 2. Create problem details context
+
+```csharp Services/ExceptionHandler.cs
+var problemDetailsContext = new ProblemDetailsContext
+{
+    HttpContext = httpContext,
+    Exception = exception,
+};
+```
+
+This context object carries all the information needed to generate the response.
+
+#### 3. Build the problem details object
+
+The handler creates different problem details objects based on the exception type:
+
+```csharp Services/ExceptionHandler.cs
+if(exception is ValidationException validationException)
+{
+    problemDetailsContext.ProblemDetails = new ValidationProblemDetails
+    {
+        Title = "An error occured while validating your request",
+        Detail = validationException.Message,
+        Type = validationException.GetType().Name,
+    };
+}
+else
+{
+    problemDetailsContext.ProblemDetails = new ProblemDetails
+    {
+        Title = "An error occured while processing your request",
+        Detail = exception.Message,
+        Type = exception.GetType().Name,
+    };
+}
+```
+
+<Note>
+  `ValidationException` instances receive special handling with `ValidationProblemDetails`, which supports structured validation error responses.
+</Note>
+
+#### 4. Write the response
+
+```csharp Services/ExceptionHandler.cs
+return await _problemDetailsService.TryWriteAsync(problemDetailsContext);
+```
+
+The `IProblemDetailsService` serializes the problem details object and writes it to the HTTP response, applying any customizations configured in your application.
+
+## Registration
+
+The exception handler is automatically registered when you call `UseExceptionHandling`:
+
+```csharp Configurator.cs
+services.AddExceptionHandler<ExceptionHandler>();
+```
+
+This registers the handler with ASP.NET Core's dependency injection container and integrates it into the exception handling pipeline.
+
+<Tip>
+  The exception handler runs before other exception handlers in the pipeline. If it returns `true` from `TryHandleAsync`, the exception is considered handled and won't propagate to other handlers.
+</Tip>
+
+## Key benefits
+
+- **Automatic conversion**: All exceptions are automatically converted to Problem Details format
+- **Type-aware handling**: Different exception types receive appropriate status codes and response formats
+- **Pipeline integration**: Works seamlessly with ASP.NET Core's exception handling middleware
+- **Extensible**: The status code mapper can be customized for application-specific exception types
+
+## Related concepts
+
+- [Status code mapping](/concepts/status-code-mapping) - Learn how exceptions are mapped to HTTP status codes
+- [Problem details](/concepts/problem-details) - Understand the structure of Problem Details responses

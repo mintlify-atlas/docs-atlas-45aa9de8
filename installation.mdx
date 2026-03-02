@@ -1,0 +1,125 @@
+---
+title: Installation
+description: Add FloppyShelf.Problemize to your .NET Web API project
+---
+
+## Package installation
+
+Problemize is distributed as a NuGet package. Choose your preferred installation method:
+
+<CodeGroup>
+
+```bash .NET CLI
+dotnet add package FloppyShelf.Problemize
+```
+
+```powershell Package Manager
+Install-Package FloppyShelf.Problemize
+```
+
+```xml PackageReference
+<PackageReference Include="FloppyShelf.Problemize" Version="*" />
+```
+
+</CodeGroup>
+
+<Note>
+  Replace `*` with the specific version number you want to use. Check [NuGet.org](https://www.nuget.org/packages/FloppyShelf.Problemize) for the latest version.
+</Note>
+
+## Requirements
+
+<CardGroup cols={2}>
+  <Card title=".NET Version" icon="code">
+    .NET 6.0 or higher
+  </Card>
+  <Card title="Project Type" icon="globe">
+    ASP.NET Core Web API
+  </Card>
+</CardGroup>
+
+Problemize is built on top of ASP.NET Core's exception handling infrastructure:
+
+- Uses `IExceptionHandler` interface (available in .NET 8+, or via NuGet in earlier versions)
+- Integrates with `IProblemDetailsService` for response formatting
+- Requires `Microsoft.AspNetCore.App` framework reference
+
+## Verify installation
+
+After installing the package, verify it's available in your project:
+
+<CodeGroup>
+
+```bash .NET CLI
+dotnet list package | grep Problemize
+```
+
+```bash Check in .csproj
+cat YourProject.csproj | grep Problemize
+```
+
+</CodeGroup>
+
+You should see output similar to:
+
+```
+FloppyShelf.Problemize    1.0.0
+```
+
+## Project structure
+
+Once installed, you'll have access to the following namespaces:
+
+```csharp
+using FloppyShelf.Problemize;                  // Main configurator
+using FloppyShelf.Problemize.Interfaces;       // IStatusCodeMapper interface
+using FloppyShelf.Problemize.Services;         // StatusCodeMapper, ExceptionHandler
+```
+
+<Check>
+  Installation complete! Continue to the [Quickstart guide](/quickstart) to configure Problemize in your application.
+</Check>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Package not found">
+    Ensure your NuGet package sources include nuget.org:
+    
+    ```bash
+    dotnet nuget list source
+    ```
+    
+    If nuget.org is missing, add it:
+    
+    ```bash
+    dotnet nuget add source https://api.nuget.org/v3/index.json -n nuget.org
+    ```
+  </Accordion>
+  
+  <Accordion title="Version conflicts">
+    If you encounter dependency conflicts, ensure your project targets a compatible .NET version:
+    
+    ```xml
+    <PropertyGroup>
+      <TargetFramework>net8.0</TargetFramework>
+    </PropertyGroup>
+    ```
+  </Accordion>
+  
+  <Accordion title="IExceptionHandler not found">
+    For .NET 6 and 7, you may need to add the exception handling NuGet package:
+    
+    ```bash
+    dotnet add package Microsoft.AspNetCore.Diagnostics
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={1}>
+  <Card title="Quickstart guide" icon="rocket" href="/quickstart">
+    Learn how to configure and use Problemize in your Web API
+  </Card>
+</CardGroup>

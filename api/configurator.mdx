@@ -1,0 +1,90 @@
+---
+title: Configurator
+description: Extension methods to configure services and middleware for exception handling
+---
+
+Provides extension methods to configure services and middleware related to exception handling in your ASP.NET Core application.
+
+## Namespace
+
+```csharp
+FloppyShelf.Problemize
+```
+
+## UseExceptionHandling (services)
+
+Configures the required services including problem details and exception handling.
+
+```csharp
+public static void UseExceptionHandling(
+    this IServiceCollection services,
+    IStatusCodeMapper? statusCodeMapper = null)
+```
+
+### Parameters
+
+<ParamField path="services" type="IServiceCollection" required>
+  The service collection to configure.
+</ParamField>
+
+<ParamField path="statusCodeMapper" type="IStatusCodeMapper" default="null">
+  Optional custom status code mapper. If not provided, the default `StatusCodeMapper` will be used.
+</ParamField>
+
+### Behavior
+
+This method:
+- Configures problem details with automatic metadata (instance, requestId, activityId)
+- Registers the status code mapper as a singleton (custom or default)
+- Registers the `ExceptionHandler` service
+
+### Exceptions
+
+- **ArgumentNullException**: Thrown when `services` is null
+
+### Example
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// Use default status code mapper
+builder.Services.UseExceptionHandling();
+
+// Or provide a custom mapper
+builder.Services.UseExceptionHandling(new CustomStatusCodeMapper());
+```
+
+## UseExceptionHandling (app)
+
+Configures the middleware pipeline to use exception handling and status code pages.
+
+```csharp
+public static void UseExceptionHandling(this WebApplication app)
+```
+
+### Parameters
+
+<ParamField path="app" type="WebApplication" required>
+  The web application instance.
+</ParamField>
+
+### Behavior
+
+This method:
+- Enables global exception handling middleware
+- Provides status code responses (e.g., 404 Not Found)
+
+### Exceptions
+
+- **ArgumentNullException**: Thrown when `app` is null
+
+### Example
+
+```csharp
+var app = builder.Build();
+
+app.UseExceptionHandling();
+
+app.MapControllers();
+app.Run();
+```

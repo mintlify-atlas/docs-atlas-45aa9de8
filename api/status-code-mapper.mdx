@@ -1,0 +1,101 @@
+---
+title: StatusCodeMapper
+description: Default implementation that maps known exceptions to HTTP status codes
+---
+
+Default implementation that maps known exceptions to appropriate HTTP status codes.
+
+## Namespace
+
+```csharp
+FloppyShelf.Problemize.Services
+```
+
+## Class declaration
+
+```csharp
+public sealed class StatusCodeMapper : IStatusCodeMapper
+```
+
+## Methods
+
+### GetStatusCode
+
+Maps an exception to an appropriate HTTP status code.
+
+```csharp
+public int GetStatusCode(Exception exception)
+```
+
+#### Parameters
+
+<ParamField path="exception" type="Exception" required>
+  The exception to evaluate.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="statusCode" type="int">
+  The corresponding HTTP status code.
+</ResponseField>
+
+## Exception mappings
+
+The default mapper uses the following exception-to-status-code mappings:
+
+| Exception Type | HTTP Status Code | Code |
+|----------------|-----------------|------|
+| `ArgumentNullException` | 400 Bad Request | `StatusCodes.Status400BadRequest` |
+| `ArgumentOutOfRangeException` | 400 Bad Request | `StatusCodes.Status400BadRequest` |
+| `InvalidOperationException` | 400 Bad Request | `StatusCodes.Status400BadRequest` |
+| `ValidationException` | 400 Bad Request | `StatusCodes.Status400BadRequest` |
+| `FormatException` | 400 Bad Request | `StatusCodes.Status400BadRequest` |
+| `OverflowException` | 400 Bad Request | `StatusCodes.Status400BadRequest` |
+| `NullReferenceException` | 400 Bad Request | `StatusCodes.Status400BadRequest` |
+| `UnauthorizedAccessException` | 401 Unauthorized | `StatusCodes.Status401Unauthorized` |
+| `KeyNotFoundException` | 404 Not Found | `StatusCodes.Status404NotFound` |
+| `FileNotFoundException` | 404 Not Found | `StatusCodes.Status404NotFound` |
+| `DirectoryNotFoundException` | 404 Not Found | `StatusCodes.Status404NotFound` |
+| `NotSupportedException` | 405 Method Not Allowed | `StatusCodes.Status405MethodNotAllowed` |
+| `TimeoutException` | 408 Request Timeout | `StatusCodes.Status408RequestTimeout` |
+| `OutOfMemoryException` | 500 Internal Server Error | `StatusCodes.Status500InternalServerError` |
+| `StackOverflowException` | 500 Internal Server Error | `StatusCodes.Status500InternalServerError` |
+| `NotImplementedException` | 501 Not Implemented | `StatusCodes.Status501NotImplemented` |
+| All other exceptions | 500 Internal Server Error | `StatusCodes.Status500InternalServerError` |
+
+## Example
+
+```csharp
+var mapper = new StatusCodeMapper();
+
+// Returns 404
+var code = mapper.GetStatusCode(new KeyNotFoundException("User not found"));
+
+// Returns 400
+var code = mapper.GetStatusCode(new ValidationException("Invalid email"));
+
+// Returns 500
+var code = mapper.GetStatusCode(new Exception("Unexpected error"));
+```
+
+## Custom mapper
+
+To override the default mappings, implement the `IStatusCodeMapper` interface:
+
+```csharp
+public class CustomStatusCodeMapper : IStatusCodeMapper
+{
+    public int GetStatusCode(Exception exception)
+    {
+        return exception switch
+        {
+            MyCustomException => StatusCodes.Status418ImATeapot,
+            ArgumentException => StatusCodes.Status422UnprocessableEntity,
+            _ => StatusCodes.Status500InternalServerError
+        };
+    }
+}
+
+// Register your custom mapper
+builder.Services.UseExceptionHandling(new CustomStatusCodeMapper());
+```

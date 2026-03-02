@@ -1,0 +1,245 @@
+---
+title: "Custom status code mapper"
+description: "Learn how to implement custom exception-to-status-code mapping using IStatusCodeMapper"
+---
+
+By default, Problemize maps common .NET exceptions to appropriate HTTP status codes. You can customize this behavior by implementing your own status code mapper.
+
+## Understanding the default mapper
+
+Problemize includes a `StatusCodeMapper` that handles common .NET exceptions:
+
+<CodeGroup>
+```csharp Default mappings
+// 400 Bad Request
+ArgumentNullException
+ArgumentOutOfRangeException
+InvalidOperationException
+ValidationException
+FormatException
+OverflowException
+NullReferenceException
+
+// 401 Unauthorized
+UnauthorizedAccessException
+
+// 404 Not Found
+KeyNotFoundException
+FileNotFoundException
+DirectoryNotFoundException
+
+// 405 Method Not Allowed
+NotSupportedException
+
+// 408 Request Timeout
+TimeoutException
+
+// 501 Not Implemented
+NotImplementedException
+
+// 500 Internal Server Error (default)
+All other exceptions
+```
+</CodeGroup>
+
+## Implementing a custom mapper
+
+To create your own status code mapper, implement the `IStatusCodeMapper` interface:
+
+<Steps>
+  <Step title="Create your mapper class">
+    Implement the `IStatusCodeMapper` interface with your custom logic:
+
+    ```csharp MyCustomStatusCodeMapper.cs
+    using FloppyShelf.Problemize.Interfaces;
+
+    namespace MyApi.Exceptions;
+
+    public class MyCustomStatusCodeMapper : IStatusCodeMapper
+    {
+        public int GetStatusCode(Exception exception)
+        {
+            return exception switch
+            {
+                // Your custom exceptions
+                ResourceNotFoundException => StatusCodes.Status404NotFound,
+                BusinessRuleViolationException => StatusCodes.Status422UnprocessableEntity,
+                DuplicateResourceException => StatusCodes.Status409Conflict,
+                RateLimitExceededException => StatusCodes.Status429TooManyRequests,
+                
+                // Fallback to common .NET exceptions
+                ArgumentNullException => StatusCodes.Status400BadRequest,
+                UnauthorizedAccessException => StatusCodes.Status401Unauthorized,
+                KeyNotFoundException => StatusCodes.Status404NotFound,
+                TimeoutException => StatusCodes.Status408RequestTimeout,
+                
+                // Default for unknown exceptions
+                _ => StatusCodes.Status500InternalServerError
+            };
+        }
+    }
+    ```
+
+    <Tip>
+      You can chain exception types or add complex logic inside the switch expression based on exception properties.
+    </Tip>
+  </Step>
+
+  <Step title="Register your custom mapper">
+    Pass your custom mapper to the `UseExceptionHandling` method in `Program.cs`:
+
+    ```csharp Program.cs
+    using MyApi.Exceptions;
+    using FloppyShelf.Problemize;
+
+    var builder = WebApplication.CreateBuilder(args);
+
+    // Register services with custom status code mapper
+    builder.Services.UseExceptionHandling(
+        statusCodeMapper: new MyCustomStatusCodeMapper()
+    );
+
+    var app = builder.Build();
+
+    // Enable exception handling middleware
+    app.UseExceptionHandling();
+
+    app.MapControllers();
+    app.Run();
+    ```
+  </Step>
+
+  <Step title="Test your mapper">
+    Throw your custom exceptions in your controllers and verify the correct status codes:
+
+    ```csharp UserController.cs
+    [ApiController]
+    [Route("api/[controller]")]
+    public class UserController : ControllerBase
+    {
+        [HttpGet("{id}")]
+        public IActionResult GetUser(int id)
+        {
+            if (id <= 0)
+                throw new ArgumentOutOfRangeException(nameof(id), "User ID must be positive");
+
+            var user = _userService.FindById(id);
+            
+            if (user == null)
+                throw new ResourceNotFoundException($"User with ID {id} not found");
+
+            return Ok(user);
+        }
+
+        [HttpPost]
+        public IActionResult CreateUser(CreateUserRequest request)
+        {
+            if (_userService.EmailExists(request.Email))
+                throw new DuplicateResourceException($"User with email {request.Email} already exists");
+
+            var user = _userService.Create(request);
+            return CreatedAtAction(nameof(GetUser), new { id = user.Id }, user);
+        }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Advanced scenarios
+
+### Conditional status code mapping
+
+You can implement complex logic based on exception properties:
+
+```csharp
+public class AdvancedStatusCodeMapper : IStatusCodeMapper
+{
+    public int GetStatusCode(Exception exception)
+    {
+        return exception switch
+        {
+            // Map based on exception properties
+            InvalidOperationException { Message: var msg } when msg.Contains("not found") 
+                => StatusCodes.Status404NotFound,
+            
+            InvalidOperationException { Message: var msg } when msg.Contains("unauthorized") 
+                => StatusCodes.Status401Unauthorized,
+            
+            // Check for specific error codes in custom exceptions
+            BusinessException { ErrorCode: "PAYMENT_REQUIRED" } 
+                => StatusCodes.Status402PaymentRequired,
+            
+            BusinessException { ErrorCode: "FORBIDDEN" } 
+                => StatusCodes.Status403Forbidden,
+            
+            // Handle aggregate exceptions
+            AggregateException agg when agg.InnerExceptions.Any(e => e is UnauthorizedAccessException) 
+                => StatusCodes.Status401Unauthorized,
+            
+            _ => StatusCodes.Status500InternalServerError
+        };
+    }
+}
+```
+
+### Composing with the default mapper
+
+You can delegate to the default mapper for common exceptions:
+
+```csharp
+public class ComposedStatusCodeMapper : IStatusCodeMapper
+{
+    private readonly StatusCodeMapper _defaultMapper = new();
+
+    public int GetStatusCode(Exception exception)
+    {
+        // Handle custom exceptions first
+        var statusCode = exception switch
+        {
+            ResourceNotFoundException => StatusCodes.Status404NotFound,
+            BusinessRuleViolationException => StatusCodes.Status422UnprocessableEntity,
+            DuplicateResourceException => StatusCodes.Status409Conflict,
+            _ => 0 // Indicate no match
+        };
+
+        // Fall back to default mapper if no custom match
+        return statusCode != 0 ? statusCode : _defaultMapper.GetStatusCode(exception);
+    }
+}
+```
+
+<Warning>
+  Always include a default case in your mapper to handle unexpected exception types. Returning `500 Internal Server Error` is recommended for safety.
+</Warning>
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Be specific" icon="crosshairs">
+    Map specific exceptions before generic ones in your switch expression.
+  </Card>
+  
+  <Card title="Use standard codes" icon="hashtag">
+    Stick to standard HTTP status codes that clients understand.
+  </Card>
+  
+  <Card title="Include defaults" icon="shield">
+    Always provide a default case to handle unknown exceptions.
+  </Card>
+  
+  <Card title="Test thoroughly" icon="vial">
+    Verify each exception type returns the expected status code.
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Custom exceptions" icon="bug" href="/guides/custom-exceptions">
+    Learn how to create custom exception types for your domain.
+  </Card>
+  
+  <Card title="Validation errors" icon="check-circle" href="/guides/validation-errors">
+    Handle validation errors with ValidationProblemDetails.
+  </Card>
+</CardGroup>

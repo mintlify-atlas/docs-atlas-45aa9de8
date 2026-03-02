@@ -1,0 +1,175 @@
+---
+title: Status code mapping
+description: Understand how Problemize maps exception types to appropriate HTTP status codes using the IStatusCodeMapper interface
+---
+
+## Overview
+
+Status code mapping is the process of converting exception types into semantically correct HTTP status codes. Problemize provides a default implementation that handles common .NET exception types, and allows you to provide custom mapping logic for your application-specific exceptions.
+
+## The IStatusCodeMapper interface
+
+The `IStatusCodeMapper` interface defines a simple contract for mapping exceptions to status codes:
+
+```csharp Interfaces/IStatusCodeMapper.cs
+public interface IStatusCodeMapper
+{
+    /// <summary>
+    /// Maps an exception to an appropriate HTTP status code.
+    /// </summary>
+    /// <param name="exception">The exception to evaluate.</param>
+    /// <returns>The corresponding HTTP status code.</returns>
+    int GetStatusCode(Exception exception);
+}
+```
+
+This interface accepts any exception and returns an integer representing the HTTP status code (e.g., 400, 404, 500).
+
+## Default implementation
+
+Problemize includes a `StatusCodeMapper` class that maps common .NET framework exceptions to appropriate HTTP status codes using a switch expression:
+
+```csharp Services/StatusCodeMapper.cs
+public sealed class StatusCodeMapper : IStatusCodeMapper
+{
+    public int GetStatusCode(Exception exception)
+    {
+        return exception switch
+        {
+            ArgumentNullException => StatusCodes.Status400BadRequest,
+            ArgumentOutOfRangeException => StatusCodes.Status400BadRequest,
+            InvalidOperationException => StatusCodes.Status400BadRequest,
+            NotSupportedException => StatusCodes.Status405MethodNotAllowed,
+            NotImplementedException => StatusCodes.Status501NotImplemented,
+            UnauthorizedAccessException => StatusCodes.Status401Unauthorized,
+            KeyNotFoundException => StatusCodes.Status404NotFound,
+            FileNotFoundException => StatusCodes.Status404NotFound,
+            DirectoryNotFoundException => StatusCodes.Status404NotFound,
+            TimeoutException => StatusCodes.Status408RequestTimeout,
+            ValidationException => StatusCodes.Status400BadRequest,
+            FormatException => StatusCodes.Status400BadRequest,
+            OverflowException => StatusCodes.Status400BadRequest,
+            NullReferenceException => StatusCodes.Status400BadRequest,
+            OutOfMemoryException => StatusCodes.Status500InternalServerError,
+            StackOverflowException => StatusCodes.Status500InternalServerError,
+            _ => StatusCodes.Status500InternalServerError,
+        };
+    }
+}
+```
+
+### Mapping categories
+
+The default mapper organizes exceptions into semantic HTTP status code categories:
+
+#### Client errors (4xx)
+
+<Accordion title="Bad Request (400)">
+  Used for validation and argument errors:
+  - `ArgumentNullException`
+  - `ArgumentOutOfRangeException`
+  - `InvalidOperationException`
+  - `ValidationException`
+  - `FormatException`
+  - `OverflowException`
+  - `NullReferenceException`
+</Accordion>
+
+<Accordion title="Unauthorized (401)">
+  Used for authentication and authorization errors:
+  - `UnauthorizedAccessException`
+</Accordion>
+
+<Accordion title="Not Found (404)">
+  Used when resources cannot be located:
+  - `KeyNotFoundException`
+  - `FileNotFoundException`
+  - `DirectoryNotFoundException`
+</Accordion>
+
+<Accordion title="Method Not Allowed (405)">
+  Used for unsupported operations:
+  - `NotSupportedException`
+</Accordion>
+
+<Accordion title="Request Timeout (408)">
+  Used for timeout scenarios:
+  - `TimeoutException`
+</Accordion>
+
+#### Server errors (5xx)
+
+<Accordion title="Internal Server Error (500)">
+  Used for critical runtime errors and any unmapped exception:
+  - `OutOfMemoryException`
+  - `StackOverflowException`
+  - Any other exception (default case)
+</Accordion>
+
+<Accordion title="Not Implemented (501)">
+  Used for unimplemented functionality:
+  - `NotImplementedException`
+</Accordion>
+
+## Custom status code mapping
+
+You can provide a custom implementation of `IStatusCodeMapper` to handle application-specific exceptions:
+
+```csharp
+public class CustomStatusCodeMapper : IStatusCodeMapper
+{
+    public int GetStatusCode(Exception exception)
+    {
+        return exception switch
+        {
+            UserNotFoundException => StatusCodes.Status404NotFound,
+            DuplicateEmailException => StatusCodes.Status409Conflict,
+            InsufficientPermissionsException => StatusCodes.Status403Forbidden,
+            _ => new StatusCodeMapper().GetStatusCode(exception)
+        };
+    }
+}
+```
+
+<Tip>
+  Fall back to the default `StatusCodeMapper` for unmapped exceptions to ensure all framework exceptions are handled correctly.
+</Tip>
+
+### Registering a custom mapper
+
+Pass your custom mapper to the `UseExceptionHandling` method:
+
+```csharp
+services.UseExceptionHandling(new CustomStatusCodeMapper());
+```
+
+The configurator will register your custom mapper instead of the default:
+
+```csharp Configurator.cs
+services.AddSingleton(statusCodeMapper ?? new StatusCodeMapper());
+```
+
+<Note>
+  The status code mapper is registered as a singleton, so it should be stateless and thread-safe.
+</Note>
+
+## How it integrates
+
+The status code mapper is called early in the exception handling process:
+
+1. An exception occurs in your API
+2. The `ExceptionHandler` receives the exception
+3. The `IStatusCodeMapper.GetStatusCode()` method is invoked
+4. The returned status code is set on the HTTP response
+5. The Problem Details object is created and returned
+
+```csharp Services/ExceptionHandler.cs
+httpContext.Response.StatusCode = _statusCodeMapper.GetStatusCode(exception);
+```
+
+This ensures the HTTP status code accurately reflects the exception type before the response body is generated.
+
+## Related concepts
+
+- [Exception handling](/concepts/exception-handling) - Learn how the exception handler uses the status code mapper
+- [Problem details](/concepts/problem-details) - Understand the response format returned to clients

@@ -1,0 +1,404 @@
+---
+title: "Validation errors"
+description: "Handle validation errors with ValidationProblemDetails for rich, structured error responses"
+---
+
+Problemize provides special handling for `ValidationException` to produce RFC 7807-compliant validation error responses with structured field-level error details.
+
+## Understanding validation error handling
+
+When a `System.ComponentModel.DataAnnotations.ValidationException` is thrown, Problemize automatically:
+
+1. Returns a `400 Bad Request` status code
+2. Creates a `ValidationProblemDetails` response instead of a standard `ProblemDetails`
+3. Sets the title to `"An error occured while validating your request"`
+4. Includes the exception message in the `detail` field
+
+<Note>
+  `ValidationException` is part of `System.ComponentModel.DataAnnotations` and is different from `FluentValidation`'s validation exceptions.
+</Note>
+
+## Basic validation exception
+
+<Steps>
+  <Step title="Throw ValidationException">
+    Use `ValidationException` for validation failures in your code:
+
+    ```csharp UserService.cs
+    using System.ComponentModel.DataAnnotations;
+
+    public class UserService
+    {
+        public User CreateUser(CreateUserRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Email))
+                throw new ValidationException("Email address is required");
+
+            if (!IsValidEmail(request.Email))
+                throw new ValidationException("Email address is not in a valid format");
+
+            if (request.Age < 18)
+                throw new ValidationException("User must be at least 18 years old");
+
+            return _repository.Create(request);
+        }
+
+        private bool IsValidEmail(string email) 
+        {
+            // Email validation logic
+            return email.Contains("@");
+        }
+    }
+    ```
+  </Step>
+
+  <Step title="Receive ValidationProblemDetails response">
+    Problemize converts the exception to a structured response:
+
+    ```json Response
+    {
+      "type": "ValidationException",
+      "title": "An error occured while validating your request",
+      "status": 400,
+      "detail": "Email address is not in a valid format",
+      "instance": "POST /api/users",
+      "requestId": "0HN4G7H8J9K0L1M2N3P4Q5R6",
+      "activityId": "00-1234567890abcdef-1234567890abcdef-00"
+    }
+    ```
+  </Step>
+</Steps>
+
+## Validation with DataAnnotations
+
+You can use built-in data annotations with model validation:
+
+<CodeGroup>
+```csharp Model with DataAnnotations
+using System.ComponentModel.DataAnnotations;
+
+public class CreateUserRequest
+{
+    [Required(ErrorMessage = "Email is required")]
+    [EmailAddress(ErrorMessage = "Invalid email format")]
+    public string Email { get; set; }
+
+    [Required(ErrorMessage = "Username is required")]
+    [StringLength(50, MinimumLength = 3, ErrorMessage = "Username must be between 3 and 50 characters")]
+    public string Username { get; set; }
+
+    [Range(18, 120, ErrorMessage = "Age must be between 18 and 120")]
+    public int Age { get; set; }
+
+    [Required(ErrorMessage = "Password is required")]
+    [StringLength(100, MinimumLength = 8, ErrorMessage = "Password must be at least 8 characters")]
+    public string Password { get; set; }
+}
+```
+
+```csharp Controller with manual validation
+[ApiController]
+[Route("api/[controller]")]
+public class UsersController : ControllerBase
+{
+    private readonly UserService _userService;
+
+    public UsersController(UserService userService)
+    {
+        _userService = userService;
+    }
+
+    [HttpPost]
+    public IActionResult CreateUser([FromBody] CreateUserRequest request)
+    {
+        // Manual validation using Validator class
+        var validationContext = new ValidationContext(request);
+        var validationResults = new List<ValidationResult>();
+        
+        if (!Validator.TryValidateObject(request, validationContext, validationResults, true))
+        {
+            var errorMessage = string.Join("; ", validationResults.Select(vr => vr.ErrorMessage));
+            throw new ValidationException(errorMessage);
+        }
+
+        var user = _userService.CreateUser(request);
+        return CreatedAtAction(nameof(GetUser), new { id = user.Id }, user);
+    }
+
+    [HttpGet("{id}")]
+    public IActionResult GetUser(int id)
+    {
+        var user = _userService.GetUser(id);
+        return Ok(user);
+    }
+}
+```
+</CodeGroup>
+
+<Tip>
+  ASP.NET Core automatically validates models with `[ApiController]` attribute. You typically don't need manual validation unless you're working with service layer validation.
+</Tip>
+
+## Custom validation exception with field-level errors
+
+For more structured validation errors with field-level details, create a custom validation exception:
+
+```csharp CustomValidationException.cs
+using System.ComponentModel.DataAnnotations;
+
+public class CustomValidationException : ValidationException
+{
+    public Dictionary<string, string[]> Errors { get; }
+
+    public CustomValidationException(Dictionary<string, string[]> errors)
+        : base(BuildErrorMessage(errors))
+    {
+        Errors = errors;
+    }
+
+    public CustomValidationException(string field, string error)
+        : this(new Dictionary<string, string[]> { { field, new[] { error } } })
+    {
+    }
+
+    private static string BuildErrorMessage(Dictionary<string, string[]> errors)
+    {
+        var errorMessages = errors
+            .SelectMany(kvp => kvp.Value.Select(error => $"{kvp.Key}: {error}"));
+        
+        return $"Validation failed: {string.Join(", ", errorMessages)}";
+    }
+}
+```
+
+### Using the custom validation exception
+
+```csharp UserService.cs
+public class UserService
+{
+    private readonly IUserRepository _repository;
+
+    public User CreateUser(CreateUserRequest request)
+    {
+        var errors = new Dictionary<string, string[]>();
+
+        // Validate email
+        if (string.IsNullOrWhiteSpace(request.Email))
+            errors.Add("email", new[] { "Email is required" });
+        else if (!IsValidEmail(request.Email))
+            errors.Add("email", new[] { "Invalid email format" });
+        else if (_repository.EmailExists(request.Email))
+            errors.Add("email", new[] { "Email already exists" });
+
+        // Validate username
+        if (string.IsNullOrWhiteSpace(request.Username))
+            errors.Add("username", new[] { "Username is required" });
+        else if (request.Username.Length < 3)
+            errors.Add("username", new[] { "Username must be at least 3 characters" });
+        else if (_repository.UsernameExists(request.Username))
+            errors.Add("username", new[] { "Username already exists" });
+
+        // Validate age
+        if (request.Age < 18)
+            errors.Add("age", new[] { "Must be at least 18 years old" });
+        else if (request.Age > 120)
+            errors.Add("age", new[] { "Age must be realistic" });
+
+        // Validate password
+        if (string.IsNullOrWhiteSpace(request.Password))
+            errors.Add("password", new[] { "Password is required" });
+        else if (request.Password.Length < 8)
+            errors.Add("password", new[] { "Password must be at least 8 characters" });
+
+        if (errors.Any())
+            throw new CustomValidationException(errors);
+
+        return _repository.Create(request);
+    }
+
+    private bool IsValidEmail(string email)
+    {
+        return email.Contains("@") && email.Contains(".");
+    }
+}
+```
+
+<CodeGroup>
+```json Example response with field errors
+{
+  "type": "CustomValidationException",
+  "title": "An error occured while validating your request",
+  "status": 400,
+  "detail": "Validation failed: email: Invalid email format, age: Must be at least 18 years old",
+  "instance": "POST /api/users",
+  "requestId": "0HN4G7H8J9K0L1M2N3P4Q5R6",
+  "activityId": "00-1234567890abcdef-1234567890abcdef-00"
+}
+```
+</CodeGroup>
+
+## Integration with FluentValidation
+
+If you're using FluentValidation, you can convert validation failures to `ValidationException`:
+
+```csharp FluentValidation integration
+using FluentValidation;
+using System.ComponentModel.DataAnnotations;
+using ValidationException = System.ComponentModel.DataAnnotations.ValidationException;
+
+public class CreateUserRequestValidator : AbstractValidator<CreateUserRequest>
+{
+    public CreateUserRequestValidator()
+    {
+        RuleFor(x => x.Email)
+            .NotEmpty().WithMessage("Email is required")
+            .EmailAddress().WithMessage("Invalid email format");
+
+        RuleFor(x => x.Username)
+            .NotEmpty().WithMessage("Username is required")
+            .Length(3, 50).WithMessage("Username must be between 3 and 50 characters");
+
+        RuleFor(x => x.Age)
+            .InclusiveBetween(18, 120).WithMessage("Age must be between 18 and 120");
+
+        RuleFor(x => x.Password)
+            .NotEmpty().WithMessage("Password is required")
+            .MinimumLength(8).WithMessage("Password must be at least 8 characters");
+    }
+}
+```
+
+```csharp Service with FluentValidation
+public class UserService
+{
+    private readonly IValidator<CreateUserRequest> _validator;
+    private readonly IUserRepository _repository;
+
+    public UserService(IValidator<CreateUserRequest> validator, IUserRepository repository)
+    {
+        _validator = validator;
+        _repository = repository;
+    }
+
+    public User CreateUser(CreateUserRequest request)
+    {
+        // Validate using FluentValidation
+        var validationResult = _validator.Validate(request);
+        
+        if (!validationResult.IsValid)
+        {
+            // Convert FluentValidation errors to standard ValidationException
+            var errorMessage = string.Join("; ", 
+                validationResult.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}"));
+            
+            throw new ValidationException(errorMessage);
+        }
+
+        return _repository.Create(request);
+    }
+}
+```
+
+<Warning>
+  FluentValidation throws its own `FluentValidation.ValidationException` which is different from `System.ComponentModel.DataAnnotations.ValidationException`. Make sure to convert it to the latter for Problemize to handle it specially.
+</Warning>
+
+## Validation in controllers vs services
+
+<AccordionGroup>
+  <Accordion title="Controller-level validation" icon="layer-group">
+    ASP.NET Core automatically validates models in controllers with `[ApiController]` attribute:
+
+    ```csharp
+    [ApiController]
+    [Route("api/[controller]")]
+    public class UsersController : ControllerBase
+    {
+        [HttpPost]
+        public IActionResult CreateUser([FromBody] CreateUserRequest request)
+        {
+            // Model is automatically validated
+            // Invalid models return 400 with ValidationProblemDetails
+            
+            var user = _userService.CreateUser(request);
+            return CreatedAtAction(nameof(GetUser), new { id = user.Id }, user);
+        }
+    }
+    ```
+
+    **Pros:**
+    - Automatic validation
+    - No boilerplate code
+    - Standard ASP.NET Core behavior
+
+    **Cons:**
+    - Limited to input validation
+    - Can't validate business rules or check database state
+  </Accordion>
+
+  <Accordion title="Service-level validation" icon="gears">
+    Perform validation in your service layer for business rules and complex validation:
+
+    ```csharp
+    public class UserService
+    {
+        public User CreateUser(CreateUserRequest request)
+        {
+            // Business rule validation
+            if (_repository.EmailExists(request.Email))
+                throw new ValidationException("Email already exists");
+
+            if (_repository.UsernameExists(request.Username))
+                throw new ValidationException("Username already exists");
+
+            // Complex validation
+            if (IsRestrictedDomain(request.Email))
+                throw new ValidationException("Email domain is not allowed");
+
+            return _repository.Create(request);
+        }
+    }
+    ```
+
+    **Pros:**
+    - Can validate business rules
+    - Can check database state
+    - Reusable across different entry points
+
+    **Cons:**
+    - Requires manual validation code
+    - More verbose
+  </Accordion>
+</AccordionGroup>
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Use specific messages" icon="message">
+    Provide clear, actionable error messages that help users fix the issue.
+  </Card>
+  
+  <Card title="Validate early" icon="forward-fast">
+    Validate input as early as possible to avoid unnecessary processing.
+  </Card>
+  
+  <Card title="Separate concerns" icon="layer-group">
+    Use controller validation for input format, service validation for business rules.
+  </Card>
+  
+  <Card title="Be consistent" icon="equals">
+    Use the same validation approach throughout your application.
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Custom exceptions" icon="bug" href="/guides/custom-exceptions">
+    Learn how to create domain-specific exception types.
+  </Card>
+  
+  <Card title="Custom status mapper" icon="map" href="/guides/custom-status-mapper">
+    Implement custom exception-to-status-code mapping.
+  </Card>
+</CardGroup>

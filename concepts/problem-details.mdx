@@ -1,0 +1,191 @@
+---
+title: Problem details
+description: Learn about the RFC 9457 Problem Details format and how Problemize structures error responses
+---
+
+## Overview
+
+Problem Details is a standardized format for HTTP API error responses defined in [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html). Problemize generates Problem Details responses automatically for all unhandled exceptions, providing consistent, machine-readable error information to API clients.
+
+## ProblemDetails vs ValidationProblemDetails
+
+Problemize uses two types of Problem Details objects depending on the exception type:
+
+### ProblemDetails
+
+The standard `ProblemDetails` class is used for all general exceptions:
+
+```csharp Services/ExceptionHandler.cs
+problemDetailsContext.ProblemDetails = new ProblemDetails
+{
+    Title = "An error occured while processing your request",
+    Detail = exception.Message,
+    Type = exception.GetType().Name,
+};
+```
+
+This generates a response like:
+
+```json
+{
+  "type": "ArgumentNullException",
+  "title": "An error occured while processing your request",
+  "status": 400,
+  "detail": "Value cannot be null. (Parameter 'userId')",
+  "instance": "GET /api/users/profile",
+  "requestId": "0HN7GKFJ3QJ4K:00000001",
+  "activityId": "00-8d3c5...-01"
+}
+```
+
+### ValidationProblemDetails
+
+When the exception is a `ValidationException`, Problemize uses `ValidationProblemDetails`:
+
+```csharp Services/ExceptionHandler.cs
+if(exception is ValidationException validationException)
+{
+    problemDetailsContext.ProblemDetails = new ValidationProblemDetails
+    {
+        Title = "An error occured while validating your request",
+        Detail = validationException.Message,
+        Type = validationException.GetType().Name,
+    };
+}
+```
+
+`ValidationProblemDetails` extends `ProblemDetails` with an `errors` property that can contain structured validation errors, making it ideal for input validation scenarios.
+
+<Info>
+  `ValidationProblemDetails` inherits from `ProblemDetails` and adds support for the `errors` dictionary, which maps field names to validation error messages.
+</Info>
+
+## Core structure
+
+Every Problem Details response contains these standard fields:
+
+<ResponseField name="type" type="string">
+  The exception type name (e.g., `ArgumentNullException`). This helps clients identify the error category.
+</ResponseField>
+
+<ResponseField name="title" type="string">
+  A human-readable summary of the error. Generic for the error category.
+</ResponseField>
+
+<ResponseField name="status" type="integer">
+  The HTTP status code (e.g., 400, 404, 500). Automatically set by the status code mapper.
+</ResponseField>
+
+<ResponseField name="detail" type="string">
+  The exception message. Provides specific information about this particular error instance.
+</ResponseField>
+
+<ResponseField name="instance" type="string">
+  The HTTP method and path that triggered the error (e.g., `POST /api/orders`). Helps with debugging and log correlation.
+</ResponseField>
+
+## Extensions
+
+Problemize automatically adds two extension properties to help with debugging and distributed tracing:
+
+### requestId
+
+```csharp Configurator.cs
+context.ProblemDetails.Extensions.TryAdd("requestId", context.HttpContext.TraceIdentifier);
+```
+
+The `requestId` contains ASP.NET Core's `TraceIdentifier`, which uniquely identifies each HTTP request. This is essential for correlating errors with server logs.
+
+<Tip>
+  Use the `requestId` when reporting issues to your support team. They can use it to locate the exact request in your application logs.
+</Tip>
+
+### activityId
+
+```csharp Configurator.cs
+var activity = context.HttpContext.Features.Get<IHttpActivityFeature>()?.Activity;
+context.ProblemDetails.Extensions.TryAdd("activityId", activity?.Id);
+```
+
+The `activityId` is extracted from the HTTP activity feature and represents the distributed tracing activity ID. This is particularly useful in microservices architectures where requests span multiple services.
+
+<Note>
+  The `activityId` follows the W3C Trace Context format (e.g., `00-8d3c5...-01`) and integrates with distributed tracing systems like Application Insights, Jaeger, and Zipkin.
+</Note>
+
+## Customization
+
+The Problem Details customization is configured when you call `UseExceptionHandling`:
+
+```csharp Configurator.cs
+services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = context =>
+    {
+        context.ProblemDetails.Instance = $"{context.HttpContext.Request.Method} {context.HttpContext.Request.Path}";
+        context.ProblemDetails.Extensions.TryAdd("requestId", context.HttpContext.TraceIdentifier);
+
+        var activity = context.HttpContext.Features.Get<IHttpActivityFeature>()?.Activity;
+        context.ProblemDetails.Extensions.TryAdd("activityId", activity?.Id);
+    };
+});
+```
+
+This customization runs for every Problem Details response, ensuring consistent metadata across all error responses.
+
+## Example responses
+
+### Not found error
+
+```json
+{
+  "type": "KeyNotFoundException",
+  "title": "An error occured while processing your request",
+  "status": 404,
+  "detail": "User with ID 12345 was not found",
+  "instance": "GET /api/users/12345",
+  "requestId": "0HN7GKFJ3QJ4K:00000001",
+  "activityId": "00-8d3c5...-01"
+}
+```
+
+### Validation error
+
+```json
+{
+  "type": "ValidationException",
+  "title": "An error occured while validating your request",
+  "status": 400,
+  "detail": "Email address is not in a valid format",
+  "instance": "POST /api/users",
+  "requestId": "0HN7GKFJ3QJ4L:00000002",
+  "activityId": "00-7a2b4...-02"
+}
+```
+
+### Server error
+
+```json
+{
+  "type": "OutOfMemoryException",
+  "title": "An error occured while processing your request",
+  "status": 500,
+  "detail": "Insufficient memory to continue the execution of the program",
+  "instance": "POST /api/reports/generate",
+  "requestId": "0HN7GKFJ3QJ4M:00000003",
+  "activityId": "00-9c1d3...-03"
+}
+```
+
+## Benefits
+
+- **Standardized format**: Follows RFC 9457, ensuring compatibility with API clients and tools
+- **Rich metadata**: Includes tracing IDs for debugging and correlation
+- **Type safety**: Strongly-typed responses with consistent structure
+- **Extensible**: Easy to add custom extensions for application-specific data
+- **Machine-readable**: Clients can parse and handle errors programmatically
+
+## Related concepts
+
+- [Exception handling](/concepts/exception-handling) - Learn how exceptions are converted to Problem Details
+- [Status code mapping](/concepts/status-code-mapping) - Understand how the status code is determined

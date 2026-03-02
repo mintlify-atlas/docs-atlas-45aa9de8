@@ -1,0 +1,356 @@
+---
+title: "Custom exceptions"
+description: "Create domain-specific exception types and integrate them with Problemize"
+---
+
+Custom exceptions help you express domain-specific errors in your application. Problemize handles all exceptions consistently, whether they're built-in .NET exceptions or your own custom types.
+
+## Why use custom exceptions
+
+Custom exceptions provide several benefits:
+
+<CardGroup cols={2}>
+  <Card title="Domain clarity" icon="lightbulb">
+    Express business rules and constraints in your exception names.
+  </Card>
+  
+  <Card title="Better error handling" icon="filter">
+    Catch and handle specific error types differently.
+  </Card>
+  
+  <Card title="Rich context" icon="circle-info">
+    Include domain-specific properties and metadata.
+  </Card>
+  
+  <Card title="Consistent responses" icon="equals">
+    Problemize converts them to standardized problem details.
+  </Card>
+</CardGroup>
+
+## Creating custom exceptions
+
+<Steps>
+  <Step title="Define your exception class">
+    Create an exception class that inherits from `Exception` or a more specific base class:
+
+    ```csharp ResourceNotFoundException.cs
+    namespace MyApi.Exceptions;
+
+    public class ResourceNotFoundException : Exception
+    {
+        public string ResourceType { get; }
+        public string ResourceId { get; }
+
+        public ResourceNotFoundException(string resourceType, string resourceId)
+            : base($"{resourceType} with ID '{resourceId}' was not found")
+        {
+            ResourceType = resourceType;
+            ResourceId = resourceId;
+        }
+
+        public ResourceNotFoundException(string resourceType, string resourceId, Exception innerException)
+            : base($"{resourceType} with ID '{resourceId}' was not found", innerException)
+        {
+            ResourceType = resourceType;
+            ResourceId = resourceId;
+        }
+    }
+    ```
+
+    <Tip>
+      Always provide constructors that accept an inner exception for proper exception chaining.
+    </Tip>
+  </Step>
+
+  <Step title="Map to HTTP status codes">
+    Configure your custom status code mapper to handle your custom exceptions:
+
+    ```csharp MyStatusCodeMapper.cs
+    using FloppyShelf.Problemize.Interfaces;
+    using MyApi.Exceptions;
+
+    public class MyStatusCodeMapper : IStatusCodeMapper
+    {
+        public int GetStatusCode(Exception exception)
+        {
+            return exception switch
+            {
+                ResourceNotFoundException => StatusCodes.Status404NotFound,
+                BusinessRuleViolationException => StatusCodes.Status422UnprocessableEntity,
+                DuplicateResourceException => StatusCodes.Status409Conflict,
+                InsufficientPermissionsException => StatusCodes.Status403Forbidden,
+                
+                // Fallback to common exceptions
+                ArgumentNullException => StatusCodes.Status400BadRequest,
+                UnauthorizedAccessException => StatusCodes.Status401Unauthorized,
+                
+                _ => StatusCodes.Status500InternalServerError
+            };
+        }
+    }
+    ```
+  </Step>
+
+  <Step title="Throw exceptions in your code">
+    Use your custom exceptions throughout your application:
+
+    ```csharp ProductService.cs
+    public class ProductService
+    {
+        private readonly IProductRepository _repository;
+
+        public Product GetProduct(int id)
+        {
+            var product = _repository.FindById(id);
+            
+            if (product == null)
+                throw new ResourceNotFoundException("Product", id.ToString());
+
+            return product;
+        }
+
+        public void UpdateProduct(int id, UpdateProductRequest request)
+        {
+            var product = GetProduct(id); // Throws ResourceNotFoundException if not found
+
+            if (request.Price < 0)
+                throw new BusinessRuleViolationException("Product price cannot be negative");
+
+            product.Update(request);
+            _repository.Save(product);
+        }
+    }
+    ```
+  </Step>
+</Steps>
+
+## How Problemize handles custom exceptions
+
+When a custom exception is thrown, Problemize automatically:
+
+1. Maps the exception to an HTTP status code using your `IStatusCodeMapper`
+2. Creates a `ProblemDetails` response with:
+   - `type`: The exception class name (e.g., `"ResourceNotFoundException"`)
+   - `title`: `"An error occured while processing your request"`
+   - `detail`: The exception message
+   - `instance`: The HTTP method and path
+   - `requestId`: The trace identifier
+
+<CodeGroup>
+```json Example response
+{
+  "type": "ResourceNotFoundException",
+  "title": "An error occured while processing your request",
+  "status": 404,
+  "detail": "Product with ID '123' was not found",
+  "instance": "GET /api/products/123",
+  "requestId": "0HN4G7H8J9K0L1M2N3P4Q5R6",
+  "activityId": "00-1234567890abcdef-1234567890abcdef-00"
+}
+```
+</CodeGroup>
+
+## Common custom exception patterns
+
+### Business rule violations
+
+For domain-specific business rule violations:
+
+```csharp BusinessRuleViolationException.cs
+public class BusinessRuleViolationException : Exception
+{
+    public string RuleName { get; }
+
+    public BusinessRuleViolationException(string ruleName, string message)
+        : base(message)
+    {
+        RuleName = ruleName;
+    }
+}
+```
+
+```csharp Usage example
+public void TransferFunds(Account from, Account to, decimal amount)
+{
+    if (from.Balance < amount)
+        throw new BusinessRuleViolationException(
+            "InsufficientFunds",
+            $"Account {from.Number} has insufficient funds for transfer of {amount:C}"
+        );
+
+    if (amount > from.DailyTransferLimit)
+        throw new BusinessRuleViolationException(
+            "DailyLimitExceeded",
+            $"Transfer amount exceeds daily limit of {from.DailyTransferLimit:C}"
+        );
+
+    // Perform transfer
+}
+```
+
+### Duplicate resource conflicts
+
+For scenarios where a resource already exists:
+
+```csharp DuplicateResourceException.cs
+public class DuplicateResourceException : Exception
+{
+    public string ResourceType { get; }
+    public string ConflictingProperty { get; }
+    public string ConflictingValue { get; }
+
+    public DuplicateResourceException(
+        string resourceType,
+        string conflictingProperty,
+        string conflictingValue)
+        : base($"{resourceType} with {conflictingProperty} '{conflictingValue}' already exists")
+    {
+        ResourceType = resourceType;
+        ConflictingProperty = conflictingProperty;
+        ConflictingValue = conflictingValue;
+    }
+}
+```
+
+```csharp Usage example
+public User CreateUser(CreateUserRequest request)
+{
+    if (_repository.ExistsByEmail(request.Email))
+        throw new DuplicateResourceException("User", "email", request.Email);
+
+    if (_repository.ExistsByUsername(request.Username))
+        throw new DuplicateResourceException("User", "username", request.Username);
+
+    return _repository.Create(request);
+}
+```
+
+### Insufficient permissions
+
+For authorization failures beyond simple unauthorized access:
+
+```csharp InsufficientPermissionsException.cs
+public class InsufficientPermissionsException : Exception
+{
+    public string RequiredPermission { get; }
+    public string Resource { get; }
+
+    public InsufficientPermissionsException(string requiredPermission, string resource)
+        : base($"Insufficient permissions to access {resource}. Required: {requiredPermission}")
+    {
+        RequiredPermission = requiredPermission;
+        Resource = resource;
+    }
+}
+```
+
+## Exception hierarchy
+
+You can create a base exception for your application and derive specific exceptions from it:
+
+```csharp MyApiException.cs
+public abstract class MyApiException : Exception
+{
+    public string ErrorCode { get; protected set; }
+    public DateTime OccurredAt { get; }
+
+    protected MyApiException(string errorCode, string message)
+        : base(message)
+    {
+        ErrorCode = errorCode;
+        OccurredAt = DateTime.UtcNow;
+    }
+
+    protected MyApiException(string errorCode, string message, Exception innerException)
+        : base(message, innerException)
+    {
+        ErrorCode = errorCode;
+        OccurredAt = DateTime.UtcNow;
+    }
+}
+```
+
+```csharp Derived exceptions
+public class ResourceNotFoundException : MyApiException
+{
+    public ResourceNotFoundException(string resourceType, string resourceId)
+        : base("RESOURCE_NOT_FOUND", $"{resourceType} with ID '{resourceId}' was not found")
+    {
+    }
+}
+
+public class BusinessRuleViolationException : MyApiException
+{
+    public BusinessRuleViolationException(string ruleName, string message)
+        : base($"BUSINESS_RULE_{ruleName.ToUpperInvariant()}", message)
+    {
+    }
+}
+```
+
+<Note>
+  Exception hierarchies make it easier to catch related exceptions and implement cross-cutting concerns like logging.
+</Note>
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Use descriptive names" icon="tag">
+    Exception names should clearly describe the error condition:
+    - ✅ `ResourceNotFoundException`
+    - ✅ `DuplicateEmailException`
+    - ❌ `Error1Exception`
+    - ❌ `CustomException`
+  </Accordion>
+
+  <Accordion title="Include helpful messages" icon="message">
+    Exception messages should help developers understand what went wrong:
+    ```csharp
+    // Good: Specific and actionable
+    throw new ResourceNotFoundException("Product", productId.ToString());
+    // Message: "Product with ID '123' was not found"
+
+    // Bad: Vague and unhelpful
+    throw new Exception("Error");
+    ```
+  </Accordion>
+
+  <Accordion title="Add relevant properties" icon="circle-plus">
+    Include properties that provide context about the error:
+    ```csharp
+    public class ValidationException : Exception
+    {
+        public Dictionary<string, string[]> Errors { get; }
+        
+        public ValidationException(Dictionary<string, string[]> errors)
+            : base("One or more validation errors occurred")
+        {
+            Errors = errors;
+        }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Don't expose sensitive data" icon="eye-slash">
+    Never include passwords, tokens, or other sensitive information in exception messages:
+    ```csharp
+    // Bad: Exposes password
+    throw new Exception($"Login failed for {username} with password {password}");
+
+    // Good: No sensitive data
+    throw new UnauthorizedAccessException("Invalid username or password");
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Custom status mapper" icon="map" href="/guides/custom-status-mapper">
+    Learn how to map your custom exceptions to HTTP status codes.
+  </Card>
+  
+  <Card title="Validation errors" icon="check-circle" href="/guides/validation-errors">
+    Handle validation errors with ValidationProblemDetails.
+  </Card>
+</CardGroup>
