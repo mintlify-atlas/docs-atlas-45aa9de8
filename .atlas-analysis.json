@@ -1,0 +1,81 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Problemize",
+  "projectDescription": "Robust exception handling framework for .NET Web APIs with standardized ProblemDetails responses.",
+  "theme": "aspen",
+  "primaryColor": "#8B3A62",
+  "lightColor": "#C75B7A",
+  "darkColor": "#5D2745",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/exception-handling",
+              "concepts/status-code-mapping",
+              "concepts/problem-details"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/custom-status-mapper",
+              "guides/custom-exceptions",
+              "guides/validation-errors"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Configuration",
+            "pages": [
+              "api/configurator"
+            ]
+          },
+          {
+            "group": "Services",
+            "pages": [
+              "api/exception-handler",
+              "api/status-code-mapper"
+            ]
+          },
+          {
+            "group": "Interfaces",
+            "pages": [
+              "api/istatuscodemapper"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Centralized exception handling with ASP.NET Core middleware",
+    "Standardized ProblemDetails and ValidationProblemDetails responses",
+    "Flexible status code mapping with IStatusCodeMapper interface",
+    "Built-in handling for common .NET exceptions",
+    "Easy integration with two-line setup",
+    "Extensible architecture for custom exception handling"
+  ],
+  "publicApiSurface": [
+    "Configurator.UseExceptionHandling(IServiceCollection, IStatusCodeMapper?)",
+    "Configurator.UseExceptionHandling(WebApplication)",
+    "IStatusCodeMapper.GetStatusCode(Exception)",
+    "StatusCodeMapper.GetStatusCode(Exception)",
+    "ExceptionHandler.TryHandleAsync(HttpContext, Exception, CancellationToken)"
+  ]
+}
